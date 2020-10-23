@@ -745,6 +745,56 @@ public final class Keychain {
         }
     }
 
+    public func put(_ value: String, key: String, ignoringAttributeSynchronizable: Bool = true) throws {
+      guard let data = value.data(using: .utf8, allowLossyConversion: false) else {
+          print("failed to convert string to data")
+          throw Status.conversionError
+      }
+      try put(data, key: key, ignoringAttributeSynchronizable: ignoringAttributeSynchronizable)
+    }
+
+    public func put(_ value: Data, key: String, ignoringAttributeSynchronizable: Bool = true) throws {
+        var query = options.query(ignoringAttributeSynchronizable: ignoringAttributeSynchronizable)
+        query[AttributeAccount] = key
+        #if os(iOS)
+        if #available(iOS 9.0, *) {
+            if let authenticationUI = options.authenticationUI {
+                query[UseAuthenticationUI] = authenticationUI.rawValue
+            } else {
+                query[UseAuthenticationUI] = UseAuthenticationUIFail
+            }
+        } else {
+            query[UseNoAuthenticationUI] = kCFBooleanTrue
+        }
+        #elseif os(OSX)
+        query[ReturnData] = kCFBooleanTrue
+        if #available(OSX 10.11, *) {
+            if let authenticationUI = options.authenticationUI {
+                query[UseAuthenticationUI] = authenticationUI.rawValue
+            } else {
+                query[UseAuthenticationUI] = UseAuthenticationUIFail
+            }
+        }
+        #else
+        if let authenticationUI = options.authenticationUI {
+            query[UseAuthenticationUI] = authenticationUI.rawValue
+        }
+        #endif
+
+        var (attributes, error) = options.attributes(key: key, value: value)
+        if let error = error {
+            print(error.localizedDescription)
+            throw error
+        }
+
+        options.attributes.forEach { attributes.updateValue($1, forKey: $0) }
+
+        let status = SecItemAdd(attributes as CFDictionary, nil)
+        if status != errSecSuccess {
+            throw securityError(status: status)
+        }
+    }
+
     public subscript(key: String) -> String? {
         get {
             #if swift(>=5.0)
